@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Arena Football - Fix Final</title>
+    <style>
+        body { margin: 0; background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; color: white; font-family: 'Arial Black', sans-serif; overflow: hidden; }
+        canvas { border: 5px solid #fff; background: #1a472a; display: none; }
+        #menu { text-align: center; background: #222; padding: 40px; border-radius: 20px; border: 4px solid #00fbff; }
+        button { display: block; width: 250px; padding: 15px; margin: 15px auto; cursor: pointer; border-radius: 10px; border: none; font-weight: bold; font-size: 18px; }
+        .btn-play { background: #00fbff; color: black; }
+        .btn-skin { background: #444; color: white; border: 2px solid #00fbff; }
+        #ui { position: absolute; top: 10px; display: none; text-align: center; width: 100%; pointer-events: none; }
+        #countdown { position: absolute; font-size: 120px; color: #fff; text-shadow: 0 0 30px #000; display: none; z-index: 10; }
+        #msg { color: #ff3e3e; font-size: 24px; display: none; margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="menu">
+    <h1>ARENA FOOT</h1>
+    <button class="btn-play" onclick="startGame()">PLAY</button>
+    <button class="btn-skin" id="skinBtn" onclick="changeSkin()">CHANGE SKIN</button>
+</div>
+
+<div id="countdown">3</div>
+
+<div id="ui">
+    <h2 id="scoreboard">JOUEUR 0 - 0 IA</h2>
+    <div id="msg">BALLE BLOQUÉE !</div>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+canvas.width = 1000; canvas.height = 600;
+
+let gameState = "menu";
+let scoreJ = 0, scoreIA = 0;
+let playerColor = '#00fbff';
+const skins = ['#00fbff', '#ff00ff', '#ffff00', '#ffffff', '#ff8800'];
+let skinIdx = 0;
+
+let stuckTimer = 0; // Nouveau timer basé sur l'immobilité
+let isPaused = false;
+
+const ball = { x: 500, y: 300, vx: 0, vy: 0, r: 12 };
+const player = { x: 200, y: 300, r: 25, speed: 7 };
+const opponent = { x: 800, y: 300, r: 25, color: '#ff3e3e', speed: 4.8 };
+const goalieJ = { x: 60, y: 300, r: 22, color: '#f1c40f' };
+const goalieIA = { x: 940, y: 300, r: 22, color: '#f1c40f' };
+
+const keys = {};
+window.onkeydown = (e) => keys[e.code] = true;
+window.onkeyup = (e) => keys[e.code] = false;
+
+function changeSkin() {
+    skinIdx = (skinIdx + 1) % skins.length;
+    playerColor = skins[skinIdx];
+    document.getElementById('skinBtn').style.color = playerColor;
+    document.getElementById('skinBtn').style.borderColor = playerColor;
+}
+
+function startGame() {
+    document.getElementById("menu").style.display = "none";
+    document.getElementById("ui").style.display = "block";
+    canvas.style.display = "block";
+    gameState = "play";
+    teleportAll();
+}
+
+function startCountdown() {
+    isPaused = true;
+    let count = 3;
+    const el = document.getElementById("countdown");
+    el.style.display = "block";
+    el.innerText = count;
+
+    let timer = setInterval(() => {
+        count--;
+        if (count > 0) el.innerText = count;
+        else {
+            clearInterval(timer);
+            el.style.display = "none";
+            isPaused = false;
+        }
+    }, 800);
+}
+
+function teleportAll() {
+    ball.x = 500; ball.y = 300; ball.vx = 0; ball.vy = 0;
+    player.x = 200; player.y = 300;
+    opponent.x = 800; opponent.y = 300;
+    goalieJ.y = 300; goalieIA.y = 300;
+    stuckTimer = 0;
+    document.getElementById("msg").style.display = "none";
+    startCountdown();
+}
+
+function update() {
+    if(gameState !== "play" || isPaused) return;
+
+    // --- CONTROLES ---
+    if (keys['ArrowUp'] || keys['KeyW']) player.y -= player.speed;
+    if (keys['ArrowDown'] || keys['KeyS']) player.y += player.speed;
+    if (keys['ArrowLeft'] || keys['KeyA']) player.x -= player.speed;
+    if (keys['ArrowRight'] || keys['KeyD']) player.x += player.speed;
+
+    // IA
+    let dxIA = ball.x - opponent.x;
+    let dyIA = ball.y - opponent.y;
+    let distIA = Math.hypot(dxIA, dyIA);
+    if(distIA > 5) {
+        opponent.x += (dxIA / distIA) * opponent.speed;
+        opponent.y += (dyIA / distIA) * opponent.speed;
+    }
+
+    // Gardiens
+    [goalieJ, goalieIA].forEach(g => {
+        if (Math.abs(ball.x - g.x) < 350) g.y += (ball.y - g.y) * 0.12;
+        g.y = Math.max(220, Math.min(380, g.y));
+    });
+
+    // Limites Joueurs
+    [player, opponent].forEach(p => {
+        p.x = Math.max(p.r + 10, Math.min(canvas.width - p.r - 10, p.x));
+        p.y = Math.max(p.r + 10, Math.min(canvas.height - p.r - 10, p.y));
+    });
+
+    // --- PHYSIQUE BALLE ---
+    ball.x += ball.vx; ball.y += ball.vy;
+    ball.vx *= 0.985; ball.vy *= 0.985;
+
+    // --- NOUVELLE RÈGLE ANTI-BLOCAGE ---
+    // On vérifie si la balle est presque arrêtée
+    if (Math.abs(ball.vx) < 0.2 && Math.abs(ball.vy) < 0.2) {
+        stuckTimer += 1/60;
+    } else {
+        stuckTimer = 0; // Reset si la balle bouge
+    }
+
+    if (stuckTimer >= 3) {
+        document.getElementById("msg").style.display = "block";
+        isPaused = true;
+        setTimeout(teleportAll, 1000);
+        return;
+    }
+
+    // --- MURS ET BUTS ---
+    if (ball.y <= ball.r + 10) { ball.y = ball.r + 11; ball.vy *= -0.8; }
+    if (ball.y >= canvas.height - ball.r - 10) { ball.y = canvas.height - ball.r - 11; ball.vy *= -0.8; }
+    
+    if (ball.x <= ball.r + 10 || ball.x >= canvas.width - ball.r - 10) {
+        if (ball.y > 200 && ball.y < 400) { 
+            if (ball.x < 500) scoreIA++; else scoreJ++;
+            document.getElementById("scoreboard").innerText = `JOUEUR ${scoreJ} - ${scoreIA} IA`;
+            teleportAll();
+        } else {
+            if (ball.x <= ball.r + 10) { ball.x = ball.r + 11; ball.vx *= -0.8; }
+            else { ball.x = canvas.width - ball.r - 11; ball.vx *= -0.8; }
+        }
+    }
+
+    // --- COLLISIONS ---
+    [player, opponent, goalieJ, goalieIA].forEach(p => {
+        let dx = ball.x - p.x; let dy = ball.y - p.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < p.r + ball.r) {
+            let angle = Math.atan2(dy, dx);
+            let force = (keys['Space'] && p === player) ? 17 : 8;
+            ball.vx = Math.cos(angle) * force; ball.vy = Math.sin(angle) * force;
+            ball.x = p.x + Math.cos(angle) * (p.r + ball.r + 2);
+            ball.y = p.y + Math.sin(angle) * (p.r + ball.r + 2);
+            stuckTimer = 0; // Toucher la balle annule le blocage
+        }
+    });
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Terrain
+    ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 4;
+    ctx.strokeRect(10, 10, canvas.width-20, canvas.height-20);
+    ctx.beginPath(); ctx.moveTo(500, 10); ctx.lineTo(500, 590); ctx.stroke();
+    ctx.beginPath(); ctx.arc(500, 300, 80, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeRect(0, 220, 40, 160); ctx.strokeRect(960, 220, 40, 160);
+
+    // Entités
+    ctx.fillStyle = playerColor; ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, 7); ctx.fill();
+    ctx.fillStyle = opponent.color; ctx.beginPath(); ctx.arc(opponent.x, opponent.y, opponent.r, 0, 7); ctx.fill();
+    ctx.fillStyle = goalieJ.color; ctx.beginPath(); ctx.arc(goalieJ.x, goalieJ.y, goalieJ.r, 0, 7); ctx.fill();
+    ctx.fillStyle = goalieIA.color; ctx.beginPath(); ctx.arc(goalieIA.x, goalieIA.y, goalieIA.r, 0, 7); ctx.fill();
+    ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 7); ctx.fill();
+
+    update();
+    requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
